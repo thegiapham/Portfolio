@@ -1,0 +1,295 @@
+---
+subtitle: "Group L92G04"
+author: "Yiying Lim, Minh Nguyen, Gia Pham, Geoffrey Yang"
+format: 
+  revealjs:
+    auto-slide: 20000
+    transition: fade
+    embed-resources: true
+    fontsize: "30px"
+---
+
+## Problem
+
+![](images/clipboard-2562760101.png){width="722"}
+
+## Can we predict housing prices based on features?
+
+![](images/clipboard-791806732.png)
+
+## Introduction to the Data
+
+-   Random sample of 1734 houses taken from the full Saratoga Housing Data [^1]
+
+-   17 Variables
+
+[^1]: De Veaux (2006). Housing_prices_GE19. https://dasl.datadescription.com/datafile/housing-prices-ge19
+
+::::: {.columns style="font-size:0.9em;"}
+::: {.column width="45%"}
+**Numerical Variables**
+
+\- [Price]{style="color:#CC79A7;"}\
+- [Lot.Size]{style="color:#CC79A7;"}\
+- [Age]{style="color:#CC79A7;"}\
+- [Land.Value]{style="color:#CC79A7;"}\
+- [Living.Area]{style="color:#CC79A7;"}\
+- [Pct.College]{style="color:#CC79A7;"}
+:::
+
+::: {.column width="55%"}
+**Categorical Variables**
+
+\- [Waterfront]{style="color:#0072B2;"}\
+- [New.Construct]{style="color:#0072B2;"}\
+- [Central.Air]{style="color:#0072B2;"}\
+- [Fuel.Type]{style="color:#0072B2;"}\
+- [Heat.Type]{style="color:#0072B2;"}\
+- [Sewer.Type]{style="color:#0072B2;"}\
+- [Bedrooms]{style="color:#0072B2;"}\
+- [Fireplaces]{style="color:#0072B2;"}\
+- [Bathrooms]{style="color:#0072B2;"}\
+- [Rooms]{style="color:#0072B2;"}\
+- [Test]{style="color:#0072B2;"}
+:::
+:::::
+
+## Initial Data Analysis - Relationships Between the Variables
+:::: {.columns}
+
+::: {.column width="65%"}
+```{r}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(tibble)
+
+# 1. Read the data (assuming "housing-prices-ge19.txt" is tab-delimited)
+house_prices <- read.delim("housing-prices-ge19.txt") 
+house_prices <- subset(house_prices, Test == 0)
+
+# 2. Fix column names
+names(house_prices) <- make.names(names(house_prices), unique = TRUE)
+
+# 3. Select only numeric columns
+# We explicitly select the main numeric columns and convert to numeric 
+# just in case read.delim failed to infer types correctly.
+num_vars <- house_prices %>% 
+  dplyr::select(
+    Price, Lot.Size, Waterfront, Age, Land.Value, New.Construct, Central.Air,
+    Living.Area, Pct.College, Bedrooms, Fireplaces, Bathrooms, Rooms
+  ) %>%
+  # Ensure all selected columns are numeric (coercing errors to NA if needed)
+  mutate(across(everything(), as.numeric)) 
+
+# 4. Compute correlation matrix (handle missing values)
+cor_matrix <- cor(num_vars, use = "pairwise.complete.obs")
+
+# 5. "Melt" the matrix into long format (required for ggplot geom_tile)
+melted_cor_mat <- cor_matrix %>%
+  # Convert matrix to data frame, keeping row names
+  as.data.frame() %>%
+  # Convert row names to a column (var1)
+  rownames_to_column(var = "var1") %>%
+  # Pivot all columns (except var1) into two columns: var2 (name) and cor (value)
+  pivot_longer(
+    cols = -var1, 
+    names_to = "var2", 
+    values_to = "cor"
+  )
+
+# 6. Create the Heatmap Plot
+ggplot(melted_cor_mat, aes(x = var1, y = var2, fill = cor)) +
+  geom_tile() +
+  # Add correlation values as text annotations
+  geom_text(aes(label = round(cor, 2)), color = "black", size = 3) + 
+  theme_minimal(base_size = 12) + # Adjust base_size for better display
+  # Use a blue-white-red gradient for correlation visualization
+  scale_fill_gradient2(
+    low = "blue", 
+    high = "red", 
+    mid = "white", 
+    midpoint = 0, 
+    limit = c(-1, 1),
+    name = "Corr."
+  ) +
+  labs(
+    title = "Correlation Matrix Heatmap of Numeric Variables",
+    x = "",
+    y = ""
+  ) +
+  theme(
+    # Rotate X-axis labels for readability
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
+    # Ensure titles are readable
+    plot.title = element_text(hjust = 0.5),
+    # Remove plot ticks and grid lines
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()
+  )
+```
+:::
+
+::: {.column width="35%"}
+```{r, warning=FALSE, message=FALSE}
+library(dplyr)
+library(tibble)
+library(knitr) # <--- ADDED for kable output
+
+set.seed(123)
+
+# Assuming "housing-prices-ge19.txt" is in your working directory
+house_prices <- read.delim("housing-prices-ge19.txt")
+
+# Fix column names to remove spaces/dots for easier access
+names(house_prices) <- make.names(names(house_prices), unique = TRUE)
+
+# Keep only training data
+data <- subset(house_prices, Test == 0)
+
+# Select only numeric columns
+num_vars <- data %>% 
+  dplyr::select(where(is.numeric))
+
+# Compute correlation matrix (handle missing values)
+cor_matrix <- cor(num_vars, use = "pairwise.complete.obs")
+
+# Round correlations
+cor_matrix <- round(cor_matrix, 2)
+
+# Get top 5 correlations with Price (excluding Price itself)
+top5_corr_vector <- cor_matrix["Price", ] %>%
+  sort(decreasing = TRUE) %>%
+  .[names(.) != "Price"] %>%
+  .[1:5]
+
+# Convert the named vector into a two-column tibble
+top5_corr_table <- top5_corr_vector %>%
+  enframe(name = "Predictor Variable", value = "Correlation with Price")
+
+# Display the table using kable
+knitr::kable(
+  top5_corr_table,
+  caption = "Top 5 Predictor Correlations with Price",
+  # Round correlation values to 2 decimal places in the output
+  digits = 2, 
+  align = "lr"
+)
+```
+
+:::
+
+::::
+## Assumption Checking
+
+```{r, message=FALSE}
+library(car)
+
+# Fit a linear regression model
+fit <- lm(Price ~ Land.Value + Living.Area + Bathrooms + Rooms, data = data)
+
+# 1. Normality of residuals
+res <- residuals(fit)
+shapiro.test(res)
+
+# 2. Multicollinearity (VIF)
+vif(fit)
+
+# 3. Plot residuals for homoscedasticity
+plot(fitted(fit), res,
+main = "Residuals vs Fitted Values",
+xlab = "Fitted Values", ylab = "Residuals")
+abline(h = 0, col = "red")
+```
+
+<<<<<<< HEAD
+## Initial Hypothesis
+=======
+-   Homoscedasticity not met. Residuals show increasing spread with fitted values, suggesting unequal error variance.
+
+-   Normality not met. Shapiro–Wilk p \< 0.001 indicates non-normal residuals.
+
+A log transformation of Price may improve both assumptions.
+>>>>>>> 93c32a8b299f6aa3d9646a6664e86251fea0803a
+
+## Full Model
+
+```{r}
+
+```
+
+## Model Selection - Stepwise Search
+
+```{r}
+
+```
+
+## Model Selection - Exhaustive Search
+
+```{r}
+
+```
+
+## Evaluations Metrics
+
+-   In Sample Testing - $R^2$
+
+-   Out of Sample Testing
+
+    -   $RMSE = \sqrt{\frac{\sum_{i=1}^{m} (y_i-\hat{y_i})^2}{m}}$
+
+    -   Cross Validation
+
+## Model 1
+
+```{r}
+
+```
+
+## Model 2
+
+```{r}
+
+```
+
+## Results
+
+```{r}
+
+```
+
+## Final Model
+
+```{r}
+
+```
+
+## Final Model - Assumption Checking
+
+```{r}
+
+```
+
+## Final Model - Prediction and Interpretation of Model Coefficients
+
+## Significance of the Model
+
+## Limitations and Avenues for Future Research {.r-fit-text}
+
+[Limitations]{.underline}
+
+-   Old data from 2006, so predictions aren't representative of current housing prices.
+
+-   Outliers were removed when training the model to meet assumptions; hence, this model would not perform well in predicting extreme property values
+
+-   Doesn't capture more complex non-linear relationships between variables\
+
+[Avenues for Future Research]{.underline}
+
+-   Investigate other models
+
+    -   Random forest - implements categorical predictors more naturally, prevents overfitting
+
+    -   kNN - easy to understand and implement, easily adapts to new data
+
+-   Implementing other variables - e.g. interest rates to capture economic context

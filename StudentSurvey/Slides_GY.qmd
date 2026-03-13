@@ -1,0 +1,150 @@
+---
+subtitle: "Group L92G04"
+author: "Tushti Chaturvedi, Yiying Lim, Minh Nguyen, Gia Pham, Geoffrey Yang"
+format: 
+  revealjs:
+    auto-slide: 20000
+    transition: fade
+    embed-resources: true
+    fontsize: "30px"
+---
+
+## Explain the Data
+
+-   **Source:** Random sample of **1734 houses** from the Saratoga Housing Data (De Veaux, 2006), originally from the *Journal of Statistics Education*.
+-   **Dataset:** 17 variables used to predict the target variable, **Price**.
+-   **Data Split:** Includes a `Test` column to separate data into training (Test=0) and testing (Test=1) sets.
+
+::::: {.columns style="font-size:0.9em;"}
+::: {.column width="45%"}
+**Numerical Variables**
+
+-   [Price]{style="color:#CC79A7;"} (Target)
+-   [Lot.Size]{style="color:#CC79A7;"}
+-   [Age]{style="color:#CC79A7;"}
+-   [Land.Value]{style="color:#CC79A7;"}
+-   [Living.Area]{style="color:#CC79A7;"}
+-   [Pct.College]{style="color:#CC79A7;"}
+:::
+
+::: {.column width="55%"}
+**Categorical Variables**
+
+-   [Waterfront]{style="color:#0072B2;"} (Binary)
+-   [New.Construct]{style="color:#0072B2;"} (Binary)
+-   [Central.Air]{style="color:#0072B2;"} (Binary)
+-   [Fuel.Type]{style="color:#0072B2;"} (Nominal)
+-   [Heat.Type]{style="color:#0072B2;"} (Nominal)
+-   [Sewer.Type]{style="color:#0072B2;"} (Nominal)
+-   [Bedrooms]{style="color:#0072B2;"} (Discrete)
+-   [Fireplaces]{style="color:#0072B2;"} (Discrete)
+-   [Bathrooms]{style="color:#0072B2;"} (Discrete)
+-   [Rooms]{style="color:#0072B2;"} (Discrete)
+:::
+:::::
+
+## IDA - ordinal & categorical transformations
+
+- the data was split into training (`Test == 0`) and testing (`Test == 1`) sets, and transforming variables into the correct format.
+- FuelType and HeatType variables contained "None" entries. We treated these as missing values (NA) and removed the affected rows from both the training and test sets.
+- We converted all categorical predictors to factors.R automatically performs one-hot encoding, giving a total of 21 predictors
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Load necessary libraries
+library(readr)
+library(dplyr)
+library(stringr)
+
+# Load data and standardize column names (e.g., Lot.Size -> LotSize)
+house_prices <- read_tsv("housing-prices-ge19.txt")
+names(house_prices) <- str_replace_all(names(house_prices), "\\.", "")
+
+# Split into training and testing sets
+train_data <- house_prices %>% filter(Test == 0)
+test_data <- house_prices %>% filter(Test == 1)
+
+# Convert "None" to NA and drop rows
+train_data_cleaned <- train_data %>%
+  mutate(
+    FuelType = na_if(as.character(FuelType), "None"),  
+    HeatType = na_if(as.character(HeatType), "None")  
+  ) %>%
+  na.omit() # drop all rows with any NAs
+
+test_data_cleaned <- test_data %>%
+  mutate(
+    FuelType = na_if(as.character(FuelType), "None"),
+    HeatType = na_if(as.character(HeatType), "None")
+  ) %>%
+  na.omit()
+
+# Show the result of the cleaning
+cat(sprintf("Original train rows: %d | Cleaned train rows: %d\n", 
+    nrow(train_data), nrow(train_data_cleaned)))
+cat(sprintf("Original test rows: %d  | Cleaned test rows: %d\n", 
+    nrow(test_data), nrow(test_data_cleaned)))
+```
+
+## Model Selection - Exhaustive Search
+
+### Justification
+An **exhaustive search** (or "best subsets") is the only method guaranteed to find the optimal model for any given number of predictors. As it is not computationally expensive in this case, we deemed it appropriate. 
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.width=8, fig.height=6, fig.align="center"}
+library(readr)
+library(dplyr)
+library(stringr)
+library(leaps)
+
+house_prices <- read_tsv("housing-prices-ge19.txt")
+names(house_prices) <- str_replace_all(names(house_prices), "\\.", "")
+
+train_data <- house_prices %>% filter(Test == 0)
+
+train_data_cleaned <- train_data %>%
+  mutate(
+    FuelType = na_if(as.character(FuelType), "None"),  
+    HeatType = na_if(as.character(HeatType), "None")  
+  ) %>%
+  na.omit()
+
+cat_cols <- c('FuelType', 'HeatType', 'SewerType', 
+              'Waterfront', 'NewConstruct', 'CentralAir')
+train_data_cleaned[cat_cols] <- lapply(train_data_cleaned[cat_cols], factor)
+
+predictors <- c('LotSize', 'Waterfront', 'Age', 'LandValue', 'NewConstruct',
+                'CentralAir', 'FuelType', 'HeatType', 'SewerType', 'LivingArea',
+                'PctCollege', 'Bedrooms', 'Fireplaces', 'Bathrooms', 'Rooms')
+
+full_formula <- as.formula(paste("Price ~", paste(predictors, collapse = " + ")))
+
+leaps_search <- regsubsets(full_formula, data = train_data_cleaned, nvmax = 21)
+leaps_summary <- summary(leaps_search)
+
+num_vars <- 1:length(leaps_summary$cp)
+best_cp_k <- which.min(leaps_summary$cp)
+
+plot(num_vars, leaps_summary$cp, 
+     type = "l", 
+     main = "Mallows' Cp vs. Number of Predictors",
+     xlab = "Number of Predictors", 
+     ylab = "Mallows' Cp",
+     cex.main = 1.5, cex.lab = 1.2, cex.axis = 1)
+
+# abline(a = 1, b = 1, lty = 2, col = "blue") 
+
+points(best_cp_k, leaps_summary$cp[best_cp_k], 
+       col = "red", pch = 19, cex = 2)
+
+text(best_cp_k, leaps_summary$cp[best_cp_k], 
+     labels = sprintf("%d vars\nMin Cp = %.2f", 
+                      best_cp_k, leaps_summary$cp[best_cp_k]), 
+     pos = 4, col = "red", cex = 1.2)
+```
+
+## Evaluation Metrics
+| Metric | Evaluation Type | Goal | Formula |
+| :--- | :--- | :--- | :--- |
+| **Adjusted R-squared ($R^2$)** | In-Sample (Selection) | **Higher** is Better | *N/A* |
+| **AIC (Akaike Info. Criterion)** | In-Sample (Selection) | **Lower** is Better | $AIC = 2k - 2\ln(\hat{L})$ |
+| **RMSE (Root Mean Sq. Error)** | Out-of-Sample (Performance) | **Lower** is Better | $RMSE = \sqrt{\frac{\sum_{i=1}^{n} (y_i - \hat{y}_i)^2}{n}}$ |
